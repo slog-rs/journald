@@ -44,12 +44,12 @@ impl Drain for JournaldDrain {
     type Error = ::Error;
     fn log(&self, info: &Record, logger_values: &OwnedKeyValueList) -> Result<(), ::Error> {
         let mut serializer = Serializer::new();
-        serializer.add_field("PRIORITY", level_to_priority(info.level()));
-        serializer.add_field("MESSAGE", info.msg());
-        serializer.add_field("CODE_FILE", info.file());
-        serializer.add_field("CODE_LINE", info.line());
-        serializer.add_field("CODE_MODULE", info.module());
-        serializer.add_field("CODE_FUNCTION", info.function());
+        serializer.add_field(format!("PRIORITY={}", level_to_priority(info.level())));
+        serializer.add_field(format!("MESSAGE={}", info.msg()));
+        serializer.add_field(format!("CODE_FILE={}", info.file()));
+        serializer.add_field(format!("CODE_LINE={}", info.line()));
+        serializer.add_field(format!("CODE_MODULE={}", info.module()));
+        serializer.add_field(format!("CODE_FUNCTION={}", info.function()));
         for (ref k, ref v) in logger_values.iter() {
             try!(v.serialize(info, k, &mut serializer));
         }
@@ -166,11 +166,11 @@ impl Serializer {
     /// Add field without sanitizing the key
     ///
     /// Note: if the key isn't a valid journald key name, it will be ignored.
-    fn add_field<T: Display>(&mut self, key: &str, val: T) {
-        self.fields.push(format!("{}={}", key, val));
+    fn add_field(&mut self, field: String) {
+        self.fields.push(field);
     }
     fn emit<T: Display>(&mut self, key: &str, val: T) -> SerResult {
-        self.fields.push(format!("{}={}", SanitizedKey(key), val));
+        self.add_field(format!("{}={}", SanitizedKey(key), val));
         Ok(())
     }
 }
