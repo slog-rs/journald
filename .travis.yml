@@ -1,0 +1,18 @@
+language: rust
+dist: trusty
+sudo: required
+rust:
+  - stable
+  - beta
+  - nightly
+
+before_install:
+  - sudo apt-get update -qq
+  - sudo apt-get install libsystemd-journal-dev
+
+env:
+  global:
+    - RUST_BACKTRACE=1
+  matrix:
+    -
+    - RELEASE=true
