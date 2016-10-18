@@ -25,7 +25,7 @@ extern crate libc;
 extern crate slog;
 
 use std::ascii::AsciiExt;
-use std::fmt::Display;
+use std::fmt::{Display, Formatter, Write};
 use std::os::raw::{c_int, c_void};
 
 use libc::{LOG_CRIT, LOG_ERR, LOG_INFO, LOG_WARNING, LOG_NOTICE, LOG_DEBUG, size_t};
@@ -74,7 +74,7 @@ pub enum Error {
 }
 
 impl Display for Error {
-    fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
+    fn fmt(&self, fmt: &mut Formatter) -> std::fmt::Result {
         match *self {
             Error::Journald(ref errno) => write!(fmt, "sd_journal_sendv returned {}", errno),
             Error::Serialization(ref e) => write!(fmt, "Unable to serialize item: {:?}", e),
@@ -139,18 +139,20 @@ fn strings_to_iovecs(strings: &[String]) -> Vec<const_iovec> {
 /// Journald keys must consist only of uppercase letters, numbers
 /// and underscores (but cannot begin with underscores).
 // So we capitalize the string and remove any invalid characters
-fn sanitize_key(key: &str) -> String {
-    key.char_indices()
-        .filter_map(|pair| {
-            let (index, c) = pair;
+struct SanitizedKey<'a>(&'a str);
+
+impl<'a> Display for SanitizedKey<'a> {
+    fn fmt(&self, fmt: &mut Formatter) -> std::fmt::Result {
+        for (index, c) in self.0.char_indices() {
             match c {
-                'A'...'Z' | '0'...'9' => Some(c),
-                'a'...'z' => Some(c.to_ascii_uppercase()),
-                '_' if index != 1 => Some(c),
-                _ => None,
+                'A'...'Z' | '0'...'9' => try!(fmt.write_char(c)),
+                'a'...'z' => try!(fmt.write_char(c.to_ascii_uppercase())),
+                '_' | '-' if index != 1 => try!(fmt.write_char('_')),
+                _ => {}
             }
-        })
-        .collect()
+        }
+        Ok(())
+    }
 }
 
 struct Serializer {
@@ -161,11 +163,14 @@ impl Serializer {
     fn new() -> Serializer {
         Serializer { fields: Vec::new() }
     }
+    /// Add field without sanitizing the key
+    ///
+    /// Note: if the key isn't a valid journald key name, it will be ignored.
     fn add_field<T: Display>(&mut self, key: &str, val: T) {
         self.fields.push(format!("{}={}", key, val));
     }
     fn emit<T: Display>(&mut self, key: &str, val: T) -> SerResult {
-        self.add_field(&sanitize_key(key), val);
+        self.fields.push(format!("{}={}", SanitizedKey(key), val));
         Ok(())
     }
 }
