@@ -11,7 +11,6 @@ repository = "https://github.com/slog-rs/journald"
 readme = "README.md"
 
 [dependencies]
-# git is temporary, should be removed once 1.1.0 is released
-slog = {version = "1.1.0", git = "https://github.com/dpc/slog-rs" }
+slog = "1.1.0"
 libc = "0.2"
 libsystemd-sys = "0.0"
