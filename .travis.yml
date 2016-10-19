@@ -7,8 +7,9 @@ rust:
   - nightly
 
 before_install:
+  - sudo add-apt-repository ppa:pitti/systemd -y
   - sudo apt-get update -qq
-  - sudo apt-get install libsystemd-journal-dev
+  - sudo apt-get install systemd -y
 
 env:
   global:
