@@ -13,7 +13,7 @@
 //! use slog_journald::*;
 //!
 //! fn main() {
-//!     let root = Logger::root(JournaldDrain.fuse(), o!("build_di" => "12344"));
+//!     let root = Logger::root(JournaldDrain.ignore_err(), o!("build_di" => "12344"));
 //!     info!(root, "Testing journald"; "foo" => "bar");
 //! }
 //! ```
