@@ -110,7 +110,9 @@ fn journald_send(args: &[String]) -> Result<(), Error> {
     if ret == 0 {
         Ok(())
     } else {
-        Err(Error::Journald(ret))
+        // NOTE: journald returns a negative error code, so negate it to get the actual
+        // error number
+        Err(Error::Journald(-ret))
     }
 }
 
