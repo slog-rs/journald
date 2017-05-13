@@ -13,7 +13,7 @@
 //! use slog_journald::*;
 //!
 //! fn main() {
-//!     let root = Logger::root(JournaldDrain.ignore_err(), o!("build_di" => "12344"));
+//!     let root = Logger::root(JournaldDrain.ignore_res(), o!("build_di" => "12344"));
 //!     info!(root, "Testing journald"; "foo" => "bar");
 //! }
 //! ```
@@ -31,8 +31,7 @@ use std::os::raw::{c_int, c_void};
 use libc::{LOG_CRIT, LOG_ERR, LOG_INFO, LOG_WARNING, LOG_NOTICE, LOG_DEBUG, size_t};
 use libsystemd_sys::const_iovec;
 use libsystemd_sys::journal::sd_journal_sendv;
-use slog::{Drain, Record, OwnedKeyValueList, Level};
-use slog::ser::Result as SerResult;
+use slog::{Drain, Record, KV, OwnedKVList, Level};
 
 /// Drain records and send to journald as structured data.
 ///
@@ -41,8 +40,10 @@ use slog::ser::Result as SerResult;
 pub struct JournaldDrain;
 
 impl Drain for JournaldDrain {
-    type Error = ::Error;
-    fn log(&self, info: &Record, logger_values: &OwnedKeyValueList) -> Result<(), ::Error> {
+    type Ok = ();
+    type Err = ::Error;
+
+    fn log(&self, info: &Record, logger_values: &OwnedKVList) -> Result<(), ::Error> {
         let mut serializer = Serializer::new();
         serializer.add_field(format!("PRIORITY={}", level_to_priority(info.level())));
         serializer.add_field(format!("MESSAGE={}", info.msg()));
@@ -50,12 +51,9 @@ impl Drain for JournaldDrain {
         serializer.add_field(format!("CODE_LINE={}", info.line()));
         serializer.add_field(format!("CODE_MODULE={}", info.module()));
         serializer.add_field(format!("CODE_FUNCTION={}", info.function()));
-        for (ref k, ref v) in logger_values.iter() {
-            try!(v.serialize(info, k, &mut serializer));
-        }
-        for &(ref k, ref v) in info.values().iter() {
-            try!(v.serialize(info, k, &mut serializer));
-        }
+
+        logger_values.serialize(info, &mut serializer)?;
+        info.kv().serialize(info, &mut serializer)?;
 
         journald_send(serializer.fields.as_slice())
     }
@@ -70,7 +68,7 @@ pub enum Error {
     /// be treated as an errno.
     Journald(i32),
     /// Error from serializing
-    Serialization(slog::ser::Error),
+    Serialization(slog::Error),
 }
 
 impl Display for Error {
@@ -98,8 +96,8 @@ impl std::error::Error for Error {
     }
 }
 
-impl From<slog::ser::Error> for Error {
-    fn from(e: slog::ser::Error) -> Error {
+impl From<slog::Error> for Error {
+    fn from(e: slog::Error) -> Error {
         Error::Serialization(e)
     }
 }
@@ -127,6 +125,8 @@ fn level_to_priority(level: Level) -> c_int {
     }
 }
 
+// NOTE: the resulting const_iovecs have the lifetime of
+// the input strings
 fn strings_to_iovecs(strings: &[String]) -> Vec<const_iovec> {
     strings.iter()
         .map(|s| {
@@ -140,7 +140,7 @@ fn strings_to_iovecs(strings: &[String]) -> Vec<const_iovec> {
 
 /// Journald keys must consist only of uppercase letters, numbers
 /// and underscores (but cannot begin with underscores).
-// So we capitalize the string and remove any invalid characters
+/// So we capitalize the string and remove any invalid characters
 struct SanitizedKey<'a>(&'a str);
 
 impl<'a> Display for SanitizedKey<'a> {
@@ -171,65 +171,44 @@ impl Serializer {
     fn add_field(&mut self, field: String) {
         self.fields.push(field);
     }
-    fn emit<T: Display>(&mut self, key: &str, val: T) -> SerResult {
+    #[inline]
+    fn emit<T: Display>(&mut self, key: &str, val: T) -> slog::Result {
         self.add_field(format!("{}={}", SanitizedKey(key), val));
         Ok(())
     }
 }
 
+macro_rules! __emitter {
+    ($name:ident : $T:ty) => {
+        fn $name(&mut self, key: &str, val: $T) -> slog::Result {
+            self.emit(key, val)
+        }
+    };
+    ($name:ident = $val:expr) => {
+        fn $name(&mut self, key: &str) -> slog::Result {
+            self.emit(key, $val)
+        }
+    };
+}
+
 impl slog::Serializer for Serializer {
-    fn emit_bool(&mut self, key: &str, val: bool) -> SerResult {
-        self.emit(key, val)
-    }
-    fn emit_unit(&mut self, key: &str) -> SerResult {
-        self.emit(key, "")
-    }
-    fn emit_none(&mut self, key: &str) -> SerResult {
-        self.emit(key, "None")
-    }
-    fn emit_char(&mut self, key: &str, val: char) -> SerResult {
-        self.emit(key, val)
-    }
-    fn emit_u8(&mut self, key: &str, val: u8) -> SerResult {
-        self.emit(key, val)
-    }
-    fn emit_i8(&mut self, key: &str, val: i8) -> SerResult {
-        self.emit(key, val)
-    }
-    fn emit_u16(&mut self, key: &str, val: u16) -> SerResult {
-        self.emit(key, val)
-    }
-    fn emit_i16(&mut self, key: &str, val: i16) -> SerResult {
-        self.emit(key, val)
-    }
-    fn emit_u32(&mut self, key: &str, val: u32) -> SerResult {
-        self.emit(key, val)
-    }
-    fn emit_i32(&mut self, key: &str, val: i32) -> SerResult {
-        self.emit(key, val)
-    }
-    fn emit_u64(&mut self, key: &str, val: u64) -> SerResult {
-        self.emit(key, val)
-    }
-    fn emit_i64(&mut self, key: &str, val: i64) -> SerResult {
-        self.emit(key, val)
-    }
-    fn emit_f32(&mut self, key: &str, val: f32) -> SerResult {
-        self.emit(key, val)
-    }
-    fn emit_f64(&mut self, key: &str, val: f64) -> SerResult {
-        self.emit(key, val)
-    }
-    fn emit_usize(&mut self, key: &str, val: usize) -> SerResult {
-        self.emit(key, val)
-    }
-    fn emit_isize(&mut self, key: &str, val: isize) -> SerResult {
-        self.emit(key, val)
-    }
-    fn emit_str(&mut self, key: &str, val: &str) -> SerResult {
-        self.emit(key, val)
-    }
-    fn emit_arguments(&mut self, key: &str, val: &std::fmt::Arguments) -> SerResult {
-        self.emit(key, val)
-    }
+    __emitter!(emit_unit = "");
+    __emitter!(emit_none = "None");
+
+    __emitter!(emit_bool: bool);
+    __emitter!(emit_char: char);
+    __emitter!(emit_u8: u8);
+    __emitter!(emit_i8: i8);
+    __emitter!(emit_u16: u16);
+    __emitter!(emit_i16: i16);
+    __emitter!(emit_u32: u32);
+    __emitter!(emit_i32: i32);
+    __emitter!(emit_u64: u64);
+    __emitter!(emit_i64: i64);
+    __emitter!(emit_f32: f32);
+    __emitter!(emit_f64: f64);
+    __emitter!(emit_usize: usize);
+    __emitter!(emit_isize: isize);
+    __emitter!(emit_str: &str);
+    __emitter!(emit_arguments: &std::fmt::Arguments);
 }
