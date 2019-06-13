@@ -24,6 +24,7 @@ extern crate libsystemd_sys;
 extern crate libc;
 extern crate slog;
 
+#[allow(deprecated, unused_imports)]
 use std::ascii::AsciiExt;
 use std::fmt::{Display, Formatter, Write};
 use std::os::raw::{c_int, c_void};
@@ -140,16 +141,24 @@ fn strings_to_iovecs(strings: &[String]) -> Vec<const_iovec> {
 
 /// Journald keys must consist only of uppercase letters, numbers
 /// and underscores (but cannot begin with underscores).
-/// So we capitalize the string and remove any invalid characters
+/// So we capitalize the string and replace any invalid characters with underscores
 struct SanitizedKey<'a>(&'a str);
 
 impl<'a> Display for SanitizedKey<'a> {
     fn fmt(&self, fmt: &mut Formatter) -> std::fmt::Result {
-        for (index, c) in self.0.char_indices() {
+        // Until we find a non-underscore character, we can't output underscores for any other chars
+        let mut found_non_underscore = false;
+        for c in self.0.chars() {
             match c {
-                'A'...'Z' | '0'...'9' => try!(fmt.write_char(c)),
-                'a'...'z' => try!(fmt.write_char(c.to_ascii_uppercase())),
-                '_' | '-' if index != 1 => try!(fmt.write_char('_')),
+                'A'...'Z' | '0'...'9' => {
+                    try!(fmt.write_char(c));
+                    found_non_underscore = true;
+                }
+                'a'...'z' => {
+                    try!(fmt.write_char(c.to_ascii_uppercase()));
+                    found_non_underscore = true;
+                },
+                _ if found_non_underscore => try!(fmt.write_char('_')),
                 _ => {}
             }
         }
@@ -228,5 +237,27 @@ mod tests {
         assert_eq!(SanitizedKey("A_A").to_string(), "A_A");
         assert_eq!(SanitizedKey("A__A").to_string(), "A__A");
         assert_eq!(SanitizedKey("A__A_").to_string(), "A__A_");
+    }
+
+    #[test]
+    fn sanitizer_uppercases() {
+        assert_eq!(SanitizedKey("abcde").to_string(), "ABCDE");
+        assert_eq!(SanitizedKey("aBcDe").to_string(), "ABCDE");
+        assert_eq!(SanitizedKey("a123b").to_string(), "A123B");
+        assert_eq!(SanitizedKey("A123B").to_string(), "A123B");
+    }
+
+    #[test]
+    fn sanitizer_replaces_chars_with_underscores() {
+        assert_eq!(SanitizedKey("A `~!@#$%^&*()-_=+A").to_string(), "A_________________A");
+        assert_eq!(SanitizedKey("A\u{ABCD}A").to_string(), "A_A");
+        assert_eq!(SanitizedKey("A\t").to_string(), "A_");
+    }
+
+    #[test]
+    fn sanitizer_cant_replace_starting_symbols_with_underscores() {
+        assert_eq!(SanitizedKey("!A").to_string(), "A");
+        assert_eq!(SanitizedKey("!*").to_string(), "");
+        assert_eq!(SanitizedKey("(A)").to_string(), "A_");
     }
 }
