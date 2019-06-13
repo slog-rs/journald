@@ -212,3 +212,21 @@ impl slog::Serializer for Serializer {
     __emitter!(emit_str: &str);
     __emitter!(emit_arguments: &std::fmt::Arguments);
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sanitizer_no_leading_underscores() {
+        assert_eq!(SanitizedKey("_A").to_string(), "A");
+        assert_eq!(SanitizedKey("__A").to_string(), "A");
+    }
+
+    #[test]
+    fn sanitizer_allow_inner_underscore() {
+        assert_eq!(SanitizedKey("A_A").to_string(), "A_A");
+        assert_eq!(SanitizedKey("A__A").to_string(), "A__A");
+        assert_eq!(SanitizedKey("A__A_").to_string(), "A__A_");
+    }
+}
