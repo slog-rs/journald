@@ -89,7 +89,7 @@ impl std::error::Error for Error {
         }
     }
 
-    fn cause(&self) -> Option<&std::error::Error> {
+    fn cause(&self) -> Option<&dyn std::error::Error> {
         match *self {
             Error::Journald(_) => None,
             Error::Serialization(ref e) => Some(e),
@@ -150,11 +150,11 @@ impl<'a> Display for SanitizedKey<'a> {
         let mut found_non_underscore = false;
         for c in self.0.chars() {
             match c {
-                'A'...'Z' | '0'...'9' => {
+                'A'..='Z' | '0'..='9' => {
                     try!(fmt.write_char(c));
                     found_non_underscore = true;
                 }
-                'a'...'z' => {
+                'a'..='z' => {
                     try!(fmt.write_char(c.to_ascii_uppercase()));
                     found_non_underscore = true;
                 },
