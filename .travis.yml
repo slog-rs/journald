@@ -10,10 +10,18 @@ before_install:
   - sudo apt-get update -qq
   - sudo apt-get install libsystemd-journal-dev libsystemd-id128-dev libsystemd-login-dev libsystemd-daemon-dev
 
+script:
+  - cargo test --verbose "$CARGO_OPTS"
+
 env:
   global:
     - RUST_BACKTRACE=1
     - LIBSYSTEMD_LDFLAGS="-l systemd-journal -l systemd-id128 -l systemd-login -l systemd-daemon"
   matrix:
     -
-    - RELEASE=true
+    - CARGO_OPTS="--features=slog/dynamic-keys"
+
+matrix:
+  include:
+    - rust: stable
+      env: CARGO_OPTS="--release"

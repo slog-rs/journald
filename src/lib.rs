@@ -32,7 +32,7 @@ use std::os::raw::{c_int, c_void};
 use libc::{LOG_CRIT, LOG_ERR, LOG_INFO, LOG_WARNING, LOG_NOTICE, LOG_DEBUG, size_t};
 use libsystemd_sys::const_iovec;
 use libsystemd_sys::journal::sd_journal_sendv;
-use slog::{Drain, Record, KV, OwnedKVList, Level};
+use slog::{Drain, Key, Record, KV, OwnedKVList, Level};
 
 /// Drain records and send to journald as structured data.
 ///
@@ -142,13 +142,14 @@ fn strings_to_iovecs(strings: &[String]) -> Vec<const_iovec> {
 /// Journald keys must consist only of uppercase letters, numbers
 /// and underscores (but cannot begin with underscores).
 /// So we capitalize the string and replace any invalid characters with underscores
-struct SanitizedKey<'a>(&'a str);
+struct SanitizedKey(Key);
 
-impl<'a> Display for SanitizedKey<'a> {
+impl<'a> Display for SanitizedKey {
     fn fmt(&self, fmt: &mut Formatter) -> std::fmt::Result {
         // Until we find a non-underscore character, we can't output underscores for any other chars
         let mut found_non_underscore = false;
-        for c in self.0.chars() {
+        let key: &str = self.0.as_ref();
+        for c in key.chars() {
             match c {
                 'A'..='Z' | '0'..='9' => {
                     try!(fmt.write_char(c));
@@ -181,7 +182,7 @@ impl Serializer {
         self.fields.push(field);
     }
     #[inline]
-    fn emit<T: Display>(&mut self, key: &str, val: T) -> slog::Result {
+    fn emit<T: Display>(&mut self, key: Key, val: T) -> slog::Result {
         self.add_field(format!("{}={}", SanitizedKey(key), val));
         Ok(())
     }
@@ -189,12 +190,12 @@ impl Serializer {
 
 macro_rules! __emitter {
     ($name:ident : $T:ty) => {
-        fn $name(&mut self, key: &str, val: $T) -> slog::Result {
+        fn $name(&mut self, key: Key, val: $T) -> slog::Result {
             self.emit(key, val)
         }
     };
     ($name:ident = $val:expr) => {
-        fn $name(&mut self, key: &str) -> slog::Result {
+        fn $name(&mut self, key: Key) -> slog::Result {
             self.emit(key, $val)
         }
     };
@@ -228,36 +229,36 @@ mod tests {
 
     #[test]
     fn sanitizer_no_leading_underscores() {
-        assert_eq!(SanitizedKey("_A").to_string(), "A");
-        assert_eq!(SanitizedKey("__A").to_string(), "A");
+        assert_eq!(SanitizedKey("_A".into()).to_string(), "A");
+        assert_eq!(SanitizedKey("__A".into()).to_string(), "A");
     }
 
     #[test]
     fn sanitizer_allow_inner_underscore() {
-        assert_eq!(SanitizedKey("A_A").to_string(), "A_A");
-        assert_eq!(SanitizedKey("A__A").to_string(), "A__A");
-        assert_eq!(SanitizedKey("A__A_").to_string(), "A__A_");
+        assert_eq!(SanitizedKey("A_A".into()).to_string(), "A_A");
+        assert_eq!(SanitizedKey("A__A".into()).to_string(), "A__A");
+        assert_eq!(SanitizedKey("A__A_".into()).to_string(), "A__A_");
     }
 
     #[test]
     fn sanitizer_uppercases() {
-        assert_eq!(SanitizedKey("abcde").to_string(), "ABCDE");
-        assert_eq!(SanitizedKey("aBcDe").to_string(), "ABCDE");
-        assert_eq!(SanitizedKey("a123b").to_string(), "A123B");
-        assert_eq!(SanitizedKey("A123B").to_string(), "A123B");
+        assert_eq!(SanitizedKey("abcde".into()).to_string(), "ABCDE");
+        assert_eq!(SanitizedKey("aBcDe".into()).to_string(), "ABCDE");
+        assert_eq!(SanitizedKey("a123b".into()).to_string(), "A123B");
+        assert_eq!(SanitizedKey("A123B".into()).to_string(), "A123B");
     }
 
     #[test]
     fn sanitizer_replaces_chars_with_underscores() {
-        assert_eq!(SanitizedKey("A `~!@#$%^&*()-_=+A").to_string(), "A_________________A");
-        assert_eq!(SanitizedKey("A\u{ABCD}A").to_string(), "A_A");
-        assert_eq!(SanitizedKey("A\t").to_string(), "A_");
+        assert_eq!(SanitizedKey("A `~!@#$%^&*()-_=+A".into()).to_string(), "A_________________A");
+        assert_eq!(SanitizedKey("A\u{ABCD}A".into()).to_string(), "A_A");
+        assert_eq!(SanitizedKey("A\t".into()).to_string(), "A_");
     }
 
     #[test]
     fn sanitizer_cant_replace_starting_symbols_with_underscores() {
-        assert_eq!(SanitizedKey("!A").to_string(), "A");
-        assert_eq!(SanitizedKey("!*").to_string(), "");
-        assert_eq!(SanitizedKey("(A)").to_string(), "A_");
+        assert_eq!(SanitizedKey("!A".into()).to_string(), "A");
+        assert_eq!(SanitizedKey("!*".into()).to_string(), "");
+        assert_eq!(SanitizedKey("(A)".into()).to_string(), "A_");
     }
 }
