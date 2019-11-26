@@ -1,4 +1,4 @@
-//! Journald drain fro slog-rs
+//! Journald drain for slog-rs
 //!
 //! Since Journald supports structured data, structured data passed to slog is
 //! simply forwarded to Journald as structured data.
