@@ -20,8 +20,8 @@
 
 #![warn(missing_docs)]
 
-extern crate libsystemd_sys;
 extern crate libc;
+extern crate libsystemd_sys;
 extern crate slog;
 
 #[allow(deprecated, unused_imports)]
@@ -29,10 +29,10 @@ use std::ascii::AsciiExt;
 use std::fmt::{Display, Formatter, Write};
 use std::os::raw::{c_int, c_void};
 
-use libc::{LOG_CRIT, LOG_ERR, LOG_INFO, LOG_WARNING, LOG_NOTICE, LOG_DEBUG, size_t};
+use libc::{size_t, LOG_CRIT, LOG_DEBUG, LOG_ERR, LOG_INFO, LOG_NOTICE, LOG_WARNING};
 use libsystemd_sys::const_iovec;
 use libsystemd_sys::journal::sd_journal_sendv;
-use slog::{Drain, Key, Record, KV, OwnedKVList, Level};
+use slog::{Drain, Key, Level, OwnedKVList, Record, KV};
 
 /// Drain records and send to journald as structured data.
 ///
@@ -129,12 +129,11 @@ fn level_to_priority(level: Level) -> c_int {
 // NOTE: the resulting const_iovecs have the lifetime of
 // the input strings
 fn strings_to_iovecs(strings: &[String]) -> Vec<const_iovec> {
-    strings.iter()
-        .map(|s| {
-            const_iovec {
-                iov_base: s.as_ptr() as *const c_void,
-                iov_len: s.len() as size_t,
-            }
+    strings
+        .iter()
+        .map(|s| const_iovec {
+            iov_base: s.as_ptr() as *const c_void,
+            iov_len: s.len() as size_t,
         })
         .collect()
 }
@@ -158,7 +157,7 @@ impl<'a> Display for SanitizedKey {
                 'a'..='z' => {
                     try!(fmt.write_char(c.to_ascii_uppercase()));
                     found_non_underscore = true;
-                },
+                }
                 _ if found_non_underscore => try!(fmt.write_char('_')),
                 _ => {}
             }
@@ -250,7 +249,10 @@ mod tests {
 
     #[test]
     fn sanitizer_replaces_chars_with_underscores() {
-        assert_eq!(SanitizedKey("A `~!@#$%^&*()-_=+A".into()).to_string(), "A_________________A");
+        assert_eq!(
+            SanitizedKey("A `~!@#$%^&*()-_=+A".into()).to_string(),
+            "A_________________A"
+        );
         assert_eq!(SanitizedKey("A\u{ABCD}A".into()).to_string(), "A_A");
         assert_eq!(SanitizedKey("A\t".into()).to_string(), "A_");
     }
