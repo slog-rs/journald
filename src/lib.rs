@@ -82,6 +82,7 @@ impl Display for Error {
 }
 
 impl std::error::Error for Error {
+    #[allow(deprecated)] // using std::error::Error::description : deprecated since rust 1.42.0
     fn description(&self) -> &str {
         match *self {
             Error::Journald(_) => "Unable to send to journald",
@@ -151,14 +152,14 @@ impl<'a> Display for SanitizedKey {
         for c in key.chars() {
             match c {
                 'A'..='Z' | '0'..='9' => {
-                    try!(fmt.write_char(c));
+                    fmt.write_char(c)?;
                     found_non_underscore = true;
                 }
                 'a'..='z' => {
-                    try!(fmt.write_char(c.to_ascii_uppercase()));
+                    fmt.write_char(c.to_ascii_uppercase())?;
                     found_non_underscore = true;
                 }
-                _ if found_non_underscore => try!(fmt.write_char('_')),
+                _ if found_non_underscore => fmt.write_char('_')?,
                 _ => {}
             }
         }
