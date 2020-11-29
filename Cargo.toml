@@ -11,7 +11,23 @@ homepage = "https://github.com/slog-rs/journald"
 repository = "https://github.com/slog-rs/journald"
 readme = "README.md"
 
+[badges]
+travis-ci = { "repository" = "slog-rs/journald" }
+
+[features]
+# Logs errno from io::Error if present.
+# Requires Rust 1.30+
+log_errno = []
+# Log sources of error one-by-one
+# The outermost error is logged as ERROR_SOURCE_0
+# The following error is logged as ERROR_SOURCE_1
+# The length of error-source chain is logged as ERROR_SOURCE_DEPTH
+log_error_sources = []
+
 [dependencies]
-slog = "2.5"
+slog = "2.6"
 libc = "0.2"
 libsystemd-sys = "0.2"
+
+[patch.crates-io.slog]
+git = "https://github.com/slog-rs/slog"

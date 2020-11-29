@@ -28,6 +28,7 @@ extern crate slog;
 use std::ascii::AsciiExt;
 use std::fmt::{Display, Formatter, Write};
 use std::os::raw::{c_int, c_void};
+use std::fmt;
 
 use libc::{size_t, LOG_CRIT, LOG_DEBUG, LOG_ERR, LOG_INFO, LOG_NOTICE, LOG_WARNING};
 use libsystemd_sys::const_iovec;
@@ -223,6 +224,52 @@ impl slog::Serializer for Serializer {
     __emitter!(emit_isize: isize);
     __emitter!(emit_str: &str);
     __emitter!(emit_arguments: &std::fmt::Arguments);
+
+    fn emit_error(&mut self, key: Key, error: &(std::error::Error + 'static)) -> slog::Result {
+        #[cfg(feature = "log_errno")]
+        {
+            let mut error_source = Some(error);
+            while let Some(source) = error_source {
+                if let Some(io_error) = source.downcast_ref::<std::io::Error>() {
+                    if let Some(errno) = io_error.raw_os_error() {
+                        self.add_field(format!("ERRNO={}", errno));
+                    }
+                }
+                error_source = source.source();
+            }
+        }
+        #[cfg(feature = "log_error_sources")]
+        {
+            let mut error_cause = Some(error);
+            let mut depth = 0usize;
+            while let Some(cause) = error_cause {
+                self.add_field(format!("ERROR_SOURCE_{}={}", depth, cause));
+                depth += 1;
+                error_cause = cause.cause();
+            }
+            self.add_field(format!("ERROR_SOURCE_DEPTH={}", depth));
+        }
+
+        self.emit_arguments(key, &format_args!("{}", ErrorAsFmt(error)))
+    }
+}
+
+// copied from slog
+struct ErrorAsFmt<'a>(pub &'a (std::error::Error + 'static));
+
+impl<'a> fmt::Display for ErrorAsFmt<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        // For backwards compatibility
+        // This is fine because we don't need downcasting
+        #![allow(deprecated)]
+        write!(f, "{}", self.0)?;
+        let mut error = self.0.cause();
+        while let Some(source) = error {
+            write!(f, ": {}", source)?;
+            error = source.cause();
+        }
+        Ok(())
+    }
 }
 
 #[cfg(test)]
