@@ -3,6 +3,9 @@
 //! Since Journald supports structured data, structured data passed to slog is
 //! simply forwarded to Journald as structured data.
 //!
+//! This crate supports specialized handling of logged errors via features.
+//! Look into `Cargo.toml` for more information.
+//!
 //! # Examples
 //! ```
 //! #[macro_use]
