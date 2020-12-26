@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - master
+    paths-ignore:
+      - README.md
+  pull_request:
+    branches:
+      - master
+    paths-ignore:
+      - README.md
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        rust: [stable, beta, nightly]
+        cargo_opts: ["", "--features=slog/dynamic-keys"]
+        include:
+          - rust: stable
+            cargo_opts: "--release"
+    continue-on-error: ${{ matrix.rust != 'stable' }}
+    runs-on: ubuntu-latest
+    env:
+      CARGO_OPTS: ${{ matrix.cargo_opts }}
+      RUST_BACKTRACE: 1
+    steps:
+      - uses: actions/checkout@v2
+      - run: sudo apt-get install libsystemd-dev
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: ${{ matrix.rust }}
+          override: true
+          components: rustfmt, clippy
+      - name: Build
+        uses: actions-rs/cargo@v1
+        with:
+          command: build
+          args: --verbose ${{ matrix.cargo_opts }}
+      - name: Test
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --verbose ${{ matrix.cargo_opts }}
+      - name: Format
+        if: "matrix.rust == 'stable' && matrix.cargo_opts == ''"
+        uses: actions-rs/cargo@v1
+        with:
+          command: fmt
+          args: --all -- --check
+      - name: Lint
+        uses: actions-rs/cargo@v1
+        with:
+          command: clippy
+          args: ${{ matrix.cargo_opts }} -- -D warnings

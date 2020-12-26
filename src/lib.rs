@@ -148,6 +148,7 @@ impl<'a> Display for SanitizedKey {
     fn fmt(&self, fmt: &mut Formatter) -> std::fmt::Result {
         // Until we find a non-underscore character, we can't output underscores for any other chars
         let mut found_non_underscore = false;
+        #[cfg_attr(not(feature = "slog/dynamic-keys"), allow(clippy::useless_asref))]
         let key: &str = self.0.as_ref();
         for c in key.chars() {
             match c {
