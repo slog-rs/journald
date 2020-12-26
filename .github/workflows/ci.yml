@@ -11,6 +11,9 @@ on:
       - master
     paths-ignore:
       - README.md
+  schedule:
+    # Run once a month
+    - cron: 0 0 1 * *
 
 jobs:
   build:
