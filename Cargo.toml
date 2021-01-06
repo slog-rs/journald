@@ -11,9 +11,6 @@ homepage = "https://github.com/slog-rs/journald"
 repository = "https://github.com/slog-rs/journald"
 readme = "README.md"
 
-[badges]
-travis-ci = { "repository" = "slog-rs/journald" }
-
 [dependencies]
 slog = "2.5"
 libc = "0.2"

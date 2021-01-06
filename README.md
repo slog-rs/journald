@@ -1,6 +1,6 @@
 # slog-journald
 
-[![Build Status](https://travis-ci.org/slog-rs/journald.svg?branch=master)](https://travis-ci.org/slog-rs/journald)
+![Build Status](https://github.com/slog-rs/journald/workflows/CI/badge.svg?branch=master)]
 [![Gitter](https://img.shields.io/gitter/room/slog-rs/slog.svg)](https://gitter.im/slog-rs/slog)
 [![Documentation](https://docs.rs/slog/badge.svg)](https://docs.rs/releases/search?query=slog)
 
