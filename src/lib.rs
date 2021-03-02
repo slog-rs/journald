@@ -183,6 +183,7 @@ impl Serializer {
         self.fields.push(field);
     }
     #[inline]
+    #[allow(clippy::unnecessary_wraps)]
     fn emit<T: Display>(&mut self, key: Key, val: T) -> slog::Result {
         self.add_field(format!("{}={}", SanitizedKey(key), val));
         Ok(())
