@@ -29,9 +29,9 @@ extern crate slog;
 
 #[allow(deprecated, unused_imports)]
 use std::ascii::AsciiExt;
+use std::fmt;
 use std::fmt::{Display, Formatter, Write};
 use std::os::raw::{c_int, c_void};
-use std::fmt;
 
 use libc::{size_t, LOG_CRIT, LOG_DEBUG, LOG_ERR, LOG_INFO, LOG_NOTICE, LOG_WARNING};
 use libsystemd_sys::const_iovec;
