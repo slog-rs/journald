@@ -228,7 +228,7 @@ impl slog::Serializer for Serializer {
     __emitter!(emit_str: &str);
     __emitter!(emit_arguments: &std::fmt::Arguments);
 
-    fn emit_error(&mut self, key: Key, error: &(std::error::Error + 'static)) -> slog::Result {
+    fn emit_error(&mut self, key: Key, error: &(dyn std::error::Error + 'static)) -> slog::Result {
         #[cfg(feature = "log_errno")]
         {
             let mut error_source = Some(error);
@@ -258,7 +258,7 @@ impl slog::Serializer for Serializer {
 }
 
 // copied from slog
-struct ErrorAsFmt<'a>(pub &'a (std::error::Error + 'static));
+struct ErrorAsFmt<'a>(pub &'a (dyn std::error::Error + 'static));
 
 impl<'a> fmt::Display for ErrorAsFmt<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
