@@ -27,7 +27,7 @@ log_error_sources = []
 [dependencies]
 slog = "2.7"
 libc = "0.2"
-libsystemd-sys = "0.2"
+libsystemd-sys = "0.9"
 
 [patch.crates-io.slog]
 git = "https://github.com/slog-rs/slog"
