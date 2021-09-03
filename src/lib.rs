@@ -23,20 +23,18 @@
 
 #![warn(missing_docs)]
 
-extern crate libc;
-extern crate libsystemd_sys;
+extern crate libsystemd;
 extern crate slog;
 
 #[allow(deprecated, unused_imports)]
 use std::ascii::AsciiExt;
 use std::fmt;
 use std::fmt::{Display, Formatter, Write};
-use std::os::raw::{c_int, c_void};
 
-use libc::{size_t, LOG_CRIT, LOG_DEBUG, LOG_ERR, LOG_INFO, LOG_NOTICE, LOG_WARNING};
-use libsystemd_sys::const_iovec;
-use libsystemd_sys::journal::sd_journal_sendv;
+use libsystemd::errors::SdError;
+use libsystemd::logging::{journal_send, Priority};
 use slog::{Drain, Key, Level, OwnedKVList, Record, KV};
+use std::borrow::Cow;
 
 /// Drain records and send to journald as structured data.
 ///
@@ -50,17 +48,20 @@ impl Drain for JournaldDrain {
 
     fn log(&self, info: &Record, logger_values: &OwnedKVList) -> Result<(), ::Error> {
         let mut serializer = Serializer::new();
-        serializer.add_field(format!("PRIORITY={}", level_to_priority(info.level())));
-        serializer.add_field(format!("MESSAGE={}", info.msg()));
-        serializer.add_field(format!("CODE_FILE={}", info.file()));
-        serializer.add_field(format!("CODE_LINE={}", info.line()));
-        serializer.add_field(format!("CODE_MODULE={}", info.module()));
-        serializer.add_field(format!("CODE_FUNCTION={}", info.function()));
+        serializer.add_field(Cow::Borrowed("CODE_FILE"), info.file().to_string());
+        serializer.add_field(Cow::Borrowed("CODE_LINE"), info.line().to_string());
+        serializer.add_field(Cow::Borrowed("CODE_MODULE"), info.module().to_string());
+        serializer.add_field(Cow::Borrowed("CODE_FUNCTION"), info.function().to_string());
 
         logger_values.serialize(info, &mut serializer)?;
         info.kv().serialize(info, &mut serializer)?;
 
-        journald_send(serializer.fields.as_slice())
+        journal_send(
+            level_to_priority(info.level()),
+            &format!("{}", info.msg()),
+            serializer.fields.into_iter(),
+        )
+        .map_err(Error::Journald)
     }
 }
 
@@ -71,7 +72,7 @@ pub enum Error {
     ///
     /// The contained integer is the return value form `sd_journal_sendv`, which can
     /// be treated as an errno.
-    Journald(i32),
+    Journald(SdError),
     /// Error from serializing
     Serialization(slog::Error),
 }
@@ -108,39 +109,15 @@ impl From<slog::Error> for Error {
     }
 }
 
-fn journald_send(args: &[String]) -> Result<(), Error> {
-    let iovecs = strings_to_iovecs(args);
-    let ret = unsafe { sd_journal_sendv(iovecs.as_ptr(), iovecs.len() as c_int) };
-    if ret == 0 {
-        Ok(())
-    } else {
-        // NOTE: journald returns a negative error code, so negate it to get the actual
-        // error number
-        Err(Error::Journald(-ret))
-    }
-}
-
-fn level_to_priority(level: Level) -> c_int {
+fn level_to_priority(level: Level) -> Priority {
     match level {
-        Level::Critical => LOG_CRIT,
-        Level::Error => LOG_ERR,
-        Level::Warning => LOG_WARNING,
-        Level::Info => LOG_NOTICE,
-        Level::Debug => LOG_INFO,
-        Level::Trace => LOG_DEBUG,
+        Level::Critical => Priority::Critical,
+        Level::Error => Priority::Error,
+        Level::Warning => Priority::Warning,
+        Level::Info => Priority::Notice,
+        Level::Debug => Priority::Info,
+        Level::Trace => Priority::Debug,
     }
-}
-
-// NOTE: the resulting const_iovecs have the lifetime of
-// the input strings
-fn strings_to_iovecs(strings: &[String]) -> Vec<const_iovec> {
-    strings
-        .iter()
-        .map(|s| const_iovec {
-            iov_base: s.as_ptr() as *const c_void,
-            iov_len: s.len() as size_t,
-        })
-        .collect()
 }
 
 /// Journald keys must consist only of uppercase letters, numbers
@@ -173,7 +150,7 @@ impl<'a> Display for SanitizedKey {
 }
 
 struct Serializer {
-    fields: Vec<String>,
+    fields: Vec<(Cow<'static, str>, String)>,
 }
 
 impl Serializer {
@@ -183,13 +160,14 @@ impl Serializer {
     /// Add field without sanitizing the key
     ///
     /// Note: if the key isn't a valid journald key name, it will be ignored.
-    fn add_field(&mut self, field: String) {
-        self.fields.push(field);
+    fn add_field(&mut self, key: Cow<'static, str>, value: String) {
+        self.fields.push((key, value));
     }
+
     #[inline]
     #[allow(clippy::unnecessary_wraps)]
     fn emit<T: Display>(&mut self, key: Key, val: T) -> slog::Result {
-        self.add_field(format!("{}={}", SanitizedKey(key), val));
+        self.add_field(Cow::Owned(SanitizedKey(key).to_string()), val.to_string());
         Ok(())
     }
 }
@@ -235,7 +213,7 @@ impl slog::Serializer for Serializer {
             while let Some(source) = error_source {
                 if let Some(io_error) = source.downcast_ref::<std::io::Error>() {
                     if let Some(errno) = io_error.raw_os_error() {
-                        self.add_field(format!("ERRNO={}", errno));
+                        self.add_field(Cow::Borrowed("ERRNO"), errno.to_string());
                     }
                 }
                 error_source = source.source();
@@ -246,11 +224,14 @@ impl slog::Serializer for Serializer {
             let mut error_cause = Some(error);
             let mut depth = 0usize;
             while let Some(cause) = error_cause {
-                self.add_field(format!("ERROR_SOURCE_{}={}", depth, cause));
+                self.add_field(
+                    Cow::Owned(format!("ERROR_SOURCE_{}", depth)),
+                    cause.to_string(),
+                );
                 depth += 1;
                 error_cause = cause.cause();
             }
-            self.add_field(format!("ERROR_SOURCE_DEPTH={}", depth));
+            self.add_field(Cow::Borrowed("ERROR_SOURCE_DEPTH"), depth.to_string());
         }
 
         self.emit_arguments(key, &format_args!("{}", ErrorAsFmt(error)))
