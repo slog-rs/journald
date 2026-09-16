@@ -16,7 +16,7 @@
 //! use slog_journald::*;
 //!
 //! fn main() {
-//!     let root = Logger::root(JournaldDrain.ignore_res(), o!("build_di" => "12344"));
+//!     let root = Logger::root(JournaldDrain::default().ignore_res(), o!("build_di" => "12344"));
 //!     info!(root, "Testing journald"; "foo" => "bar");
 //! }
 //! ```
@@ -40,7 +40,44 @@ use std::borrow::Cow;
 ///
 /// Journald requires keys to be uppercase alphanumeric, so logging keys
 /// are capitalized and all non-alpha-numeric letters are converted to underscores.
-pub struct JournaldDrain;
+#[derive(Clone, Debug)]
+pub struct JournaldDrain {
+    emit_code_fields: bool,
+}
+
+impl Default for JournaldDrain {
+    fn default() -> Self {
+        Self {
+            emit_code_fields: true,
+        }
+    }
+}
+
+impl JournaldDrain {
+    /// Enables or disables generation of journald `CODE_*` fields.
+    /// By default, this is enabled.
+    ///
+    /// # Examples
+    /// ```
+    /// #[macro_use]
+    /// extern crate slog;
+    /// extern crate slog_journald;
+    ///
+    /// use slog::*;
+    /// use slog_journald::*;
+    ///
+    /// fn main() {
+    ///     let root = Logger::root(
+    ///         JournaldDrain::default().emit_code_fields(false).ignore_res(),
+    ///         o!("build_di" => "12344")
+    ///     );
+    ///     info!(root, "Testing journald without code fields"; "foo" => "bar");
+    /// }
+    /// ```
+    pub fn emit_code_fields(self, emit_code_fields: bool) -> Self {
+        Self { emit_code_fields }
+    }
+}
 
 impl Drain for JournaldDrain {
     type Ok = ();
@@ -48,10 +85,12 @@ impl Drain for JournaldDrain {
 
     fn log(&self, info: &Record, logger_values: &OwnedKVList) -> Result<(), ::Error> {
         let mut serializer = Serializer::new();
-        serializer.add_field(Cow::Borrowed("CODE_FILE"), info.file().to_string());
-        serializer.add_field(Cow::Borrowed("CODE_LINE"), info.line().to_string());
-        serializer.add_field(Cow::Borrowed("CODE_MODULE"), info.module().to_string());
-        serializer.add_field(Cow::Borrowed("CODE_FUNCTION"), info.function().to_string());
+        if self.emit_code_fields {
+            serializer.add_field(Cow::Borrowed("CODE_FILE"), info.file().to_string());
+            serializer.add_field(Cow::Borrowed("CODE_LINE"), info.line().to_string());
+            serializer.add_field(Cow::Borrowed("CODE_MODULE"), info.module().to_string());
+            serializer.add_field(Cow::Borrowed("CODE_FUNCTION"), info.function().to_string());
+        }
 
         logger_values.serialize(info, &mut serializer)?;
         info.kv().serialize(info, &mut serializer)?;
