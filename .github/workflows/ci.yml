@@ -20,7 +20,7 @@ jobs:
     strategy:
       matrix:
         rust: [stable, beta, nightly]
-        cargo_opts: ["", "--features=slog/dynamic-keys --all-features"]
+        cargo_opts: ["", "--features=slog/dynamic-keys"]
         include:
           - rust: stable
             cargo_opts: "--release"
