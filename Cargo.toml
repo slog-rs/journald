@@ -26,4 +26,4 @@ log_error_sources = []
 
 [dependencies]
 slog = "2.7"
-libsystemd = "0.4.1"
+libsystemd = "0.7.2"

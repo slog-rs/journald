@@ -12,8 +12,8 @@ on:
     paths-ignore:
       - README.md
   schedule:
-    # Run once a month
-    - cron: 0 0 1 * *
+    # Run once a year
+    - cron: 0 0 1 7 *
 
 jobs:
   build:
@@ -30,32 +30,18 @@ jobs:
       CARGO_OPTS: ${{ matrix.cargo_opts }}
       RUST_BACKTRACE: 1
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v7
       - run: sudo apt-get install libsystemd-dev
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: ${{ matrix.rust }}
-          override: true
-          components: rustfmt, clippy
+      - name: Rust toolchain
+        run: |
+          rustup override set ${{ matrix.rust }}
+          rustup component add clippy
       - name: Build
-        uses: actions-rs/cargo@v1
-        with:
-          command: build
-          args: --verbose ${{ matrix.cargo_opts }}
+        run: cargo build --verbose ${{ matrix.cargo_opts }}
       - name: Test
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: --verbose ${{ matrix.cargo_opts }}
+        run: cargo test --verbose ${{ matrix.cargo_opts }}
       - name: Format
         if: "matrix.rust == 'stable' && matrix.cargo_opts == ''"
-        uses: actions-rs/cargo@v1
-        with:
-          command: fmt
-          args: --all -- --check
+        run: cargo fmt --all -- --check
       - name: Lint
-        uses: actions-rs/cargo@v1
-        with:
-          command: clippy
-          args: ${{ matrix.cargo_opts }} -- -D warnings
+        run: cargo clippy ${{ matrix.cargo_opts }} -- -D warnings
