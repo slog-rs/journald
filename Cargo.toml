@@ -18,11 +18,17 @@ travis-ci = { "repository" = "slog-rs/journald" }
 # Logs errno from io::Error if present.
 # Requires Rust 1.30+
 log_errno = []
+
 # Log sources of error one-by-one
 # The outermost error is logged as ERROR_SOURCE_0
 # The following error is logged as ERROR_SOURCE_1
 # The length of error-source chain is logged as ERROR_SOURCE_DEPTH
 log_error_sources = []
+
+# With this feature on, the CODE_ fields won't be
+# set in the journald records. This can be used to turn off
+# including code location information in the logs
+omit_code_locations = []
 
 [dependencies]
 slog = "2.7"
