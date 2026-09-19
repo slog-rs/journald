@@ -1,6 +1,7 @@
 [package]
 name = "slog-journald"
 version = "2.2.0"
+edition = "2024"
 authors = ["Thayne McCombs <astrothayne@gmail.com>"]
 description = "Journald drain for slog-rs"
 keywords = ["slog", "logging", "log", "journald", "systemd"]
@@ -14,16 +15,6 @@ readme = "README.md"
 [badges]
 travis-ci = { "repository" = "slog-rs/journald" }
 
-[features]
-# Logs errno from io::Error if present.
-# Requires Rust 1.30+
-log_errno = []
-# Log sources of error one-by-one
-# The outermost error is logged as ERROR_SOURCE_0
-# The following error is logged as ERROR_SOURCE_1
-# The length of error-source chain is logged as ERROR_SOURCE_DEPTH
-log_error_sources = []
-
 [dependencies]
-slog = "2.7"
+slog = "2.8"
 libsystemd = "0.7.2"
