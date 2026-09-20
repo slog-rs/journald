@@ -16,7 +16,7 @@
 //! use slog_journald::*;
 //!
 //! fn main() {
-//!     let root = Logger::root(JournaldDrain.ignore_res(), o!("build_di" => "12344"));
+//!     let root = Logger::root(JournaldDrain::default().ignore_res(), o!("build_di" => "12344"));
 //!     info!(root, "Testing journald"; "foo" => "bar");
 //! }
 //! ```
@@ -32,24 +32,95 @@ use std::fmt;
 use std::fmt::{Display, Formatter, Write};
 
 use libsystemd::errors::SdError;
-use libsystemd::logging::{journal_send, Priority};
-use slog::{Drain, Key, Level, OwnedKVList, Record, KV};
+use libsystemd::logging::{Priority, journal_send};
+use slog::{Drain, KV, Key, Level, OwnedKVList, Record};
 use std::borrow::Cow;
 
 /// Drain records and send to journald as structured data.
 ///
 /// Journald requires keys to be uppercase alphanumeric, so logging keys
 /// are capitalized and all non-alpha-numeric letters are converted to underscores.
-pub struct JournaldDrain;
+#[derive(Clone, Debug)]
+pub struct JournaldDrain {
+    emit_code_fields: bool,
+    emit_errno: bool,
+    emit_error_sources: bool,
+}
+
+impl Default for JournaldDrain {
+    fn default() -> Self {
+        Self {
+            emit_code_fields: true,
+            emit_errno: false,
+            emit_error_sources: false,
+        }
+    }
+}
+
+impl JournaldDrain {
+    /// Enables or disables generation of journald `CODE_*` fields.
+    /// By default, this is enabled.
+    ///
+    /// # Examples
+    /// ```
+    /// #[macro_use]
+    /// extern crate slog;
+    /// extern crate slog_journald;
+    ///
+    /// use slog::*;
+    /// use slog_journald::*;
+    ///
+    /// fn main() {
+    ///     let root = Logger::root(
+    ///         JournaldDrain::default().emit_code_fields(false).ignore_res(),
+    ///         o!("build_di" => "12344")
+    ///     );
+    ///     info!(root, "Testing journald without code fields"; "foo" => "bar");
+    /// }
+    /// ```
+    pub fn emit_code_fields(self, emit_code_fields: bool) -> Self {
+        Self {
+            emit_code_fields,
+            ..self
+        }
+    }
+
+    /// Enables or disables generation of journald ERRNO field for std::io::Error errors.
+    ///
+    /// By default, this is disabled.
+    /// ```
+    pub fn emit_errno(self, emit_errno: bool) -> Self {
+        Self { emit_errno, ..self }
+    }
+
+    /// Enables or disables whether each all error sources are exported as separate fields.
+    ///
+    /// By default, this is disabled.
+    ///
+    /// If true, then for each error in an error chain, this will emit a separate `ERROR_SOURCE_$N`
+    /// field, where `$N` is the depth of that error in the chain, as well as an `ERROR_SOURCE_DEPTH`
+    /// field containing the total depth of the error chain.
+    /// ```
+    pub fn emit_error_sources(self, emit_error_sources: bool) -> Self {
+        Self {
+            emit_error_sources,
+            ..self
+        }
+    }
+}
 
 impl Drain for JournaldDrain {
     type Ok = ();
-    type Err = ::Error;
+    type Err = Error;
 
-    fn log(&self, info: &Record, logger_values: &OwnedKVList) -> Result<(), ::Error> {
-        let mut serializer = Serializer::new();
-        #[cfg(not(feature = "omit_code_locations"))]
-        {
+    fn log(&self, info: &Record, logger_values: &OwnedKVList) -> Result<(), Error> {
+        let mut serializer = Serializer {
+            fields: Vec::new(),
+            emit_errno: self.emit_errno,
+            emit_error_sources: self.emit_error_sources,
+        };
+
+        if self.emit_code_fields {
             serializer.add_field(Cow::Borrowed("CODE_FILE"), info.file().to_string());
             serializer.add_field(Cow::Borrowed("CODE_LINE"), info.line().to_string());
             serializer.add_field(Cow::Borrowed("CODE_MODULE"), info.module().to_string());
@@ -157,12 +228,11 @@ impl Display for SanitizedKey {
 
 struct Serializer {
     fields: Vec<(Cow<'static, str>, String)>,
+    emit_errno: bool,
+    emit_error_sources: bool,
 }
 
 impl Serializer {
-    fn new() -> Serializer {
-        Serializer { fields: Vec::new() }
-    }
     /// Add field without sanitizing the key
     ///
     /// Note: if the key isn't a valid journald key name, it will be ignored.
@@ -213,29 +283,27 @@ impl slog::Serializer for Serializer {
     __emitter!(emit_arguments: &std::fmt::Arguments);
 
     fn emit_error(&mut self, key: Key, error: &(dyn std::error::Error + 'static)) -> slog::Result {
-        #[cfg(feature = "log_errno")]
-        {
+        if self.emit_errno {
             let mut error_source = Some(error);
             while let Some(source) = error_source {
-                if let Some(io_error) = source.downcast_ref::<std::io::Error>() {
-                    if let Some(errno) = io_error.raw_os_error() {
-                        self.add_field(Cow::Borrowed("ERRNO"), errno.to_string());
-                    }
+                if let Some(io_error) = source.downcast_ref::<std::io::Error>()
+                    && let Some(errno) = io_error.raw_os_error()
+                {
+                    self.add_field(Cow::Borrowed("ERRNO"), errno.to_string());
                 }
                 error_source = source.source();
             }
         }
-        #[cfg(feature = "log_error_sources")]
-        {
-            let mut error_cause = Some(error);
+        if self.emit_error_sources {
+            let mut error_source = Some(error);
             let mut depth = 0usize;
-            while let Some(cause) = error_cause {
+            while let Some(source) = error_source {
                 self.add_field(
                     Cow::Owned(format!("ERROR_SOURCE_{}", depth)),
-                    cause.to_string(),
+                    source.to_string(),
                 );
                 depth += 1;
-                error_cause = cause.cause();
+                error_source = source.source();
             }
             self.add_field(Cow::Borrowed("ERROR_SOURCE_DEPTH"), depth.to_string());
         }
@@ -249,14 +317,11 @@ struct ErrorAsFmt<'a>(pub &'a (dyn std::error::Error + 'static));
 
 impl<'a> fmt::Display for ErrorAsFmt<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        // For backwards compatibility
-        // This is fine because we don't need downcasting
-        #![allow(deprecated)]
         write!(f, "{}", self.0)?;
-        let mut error = self.0.cause();
+        let mut error = self.0.source();
         while let Some(source) = error {
             write!(f, ": {}", source)?;
-            error = source.cause();
+            error = source.source();
         }
         Ok(())
     }
